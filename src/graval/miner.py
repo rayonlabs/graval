@@ -77,9 +77,7 @@ class Miner(BaseGraVal):
         finally:
             self._free_ciphertext(result)
 
-    def decrypt(
-        self, encrypted_data: bytes, iv: bytes, length: int, device_id: int
-    ) -> str:
+    def decrypt(self, encrypted_data: bytes, iv: bytes, length: int, device_id: int) -> str:
         """
         Decrypt data as a miner.
         """
@@ -115,9 +113,7 @@ class Miner(BaseGraVal):
         error_msg = create_string_buffer(1024)
         device_info = self._lib.gather_device_info(c_uint(device_id), error_msg)
         if not device_info:
-            raise GraValError(
-                f"Failed to gather device info: {error_msg.value.decode()}"
-            )
+            raise GraValError(f"Failed to gather device info: {error_msg.value.decode()}")
         return device_info.contents.to_dict()
 
     def process_device_info_challenge(self, challenge: str) -> str:
@@ -164,9 +160,7 @@ class Miner(BaseGraVal):
         finally:
             self._free_char_ptr(result)
 
-    def process_filesystem_challenge(
-        self, filename: str, offset: int, length: int
-    ) -> str:
+    def process_filesystem_challenge(self, filename: str, offset: int, length: int) -> str:
         """
         Process a filesystem challenge.
         """

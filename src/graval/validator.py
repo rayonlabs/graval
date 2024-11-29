@@ -78,9 +78,7 @@ class Validator(BaseGraVal):
         """
         self._lib.initialize_validator()
 
-    def encrypt(
-        self, device_info: Dict, plaintext: str, seed: int
-    ) -> Tuple[bytes, bytes, int]:
+    def encrypt(self, device_info: Dict, plaintext: str, seed: int) -> Tuple[bytes, bytes, int]:
         """
         Encrypt data as a validator.
         """
@@ -170,9 +168,7 @@ class Validator(BaseGraVal):
         """
         device = GraValDeviceInfo.from_dict(device_info)
         text_buffer = create_string_buffer(plaintext.encode())
-        result = self._lib.generate_matrix_challenge(
-            c_ulong(seed), byref(device), text_buffer
-        )
+        result = self._lib.generate_matrix_challenge(c_ulong(seed), byref(device), text_buffer)
         if not result:
             raise GraValError("Matrix challenge generation failed")
         try:
