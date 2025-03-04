@@ -1,0 +1,18 @@
+all:
+  vars:
+    ssh_keys:
+      - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDIEYTszy25lH6p+N9UdxjRIG5sfJxSULDxXNfCGUpS2kk/lj/eAFBgBWgyT/vk6jasnPXaziGah2mm+ie8nyklNCsGA+OnUypck0rLlcMBE1VEJhzv+zIFKQT4XhuuN2YE23bl7++lASbugdbqXUI3voby/05yxYqqa7S3b/Dg+RvFNqXSUz3lx+zt5ebzuYiz26gmt5Auw259C6FsXyhVpAu9/YMrtm3t+E5Y/CoQ7s6tHDFerZgVPA04hX7FQJ0xWSbUDCh7kcPAwPz1rt+IJkEC7GYDdtp1pg32eOD/QH2Nb0d+bpvlZbN36DWMVuuaSL171HWXNGzELKznDJ57h3kLLdK3cN+9T+E2Xr73raYYuP7yqzafXXjLDqWampmFZ+WOuuExwDpHTi08MBIsSdOnk+0dcZcI9YjIJBcxXEwLjvbFQs8Pts99loFEZDWH9VwyRrez5Ob5gzAVX1Q2xFRG0PzK7v8ZfOOI7pK2EqJM/VJmwWlLGZD5ZFMR+A0= jdurbin@airoboros"
+    user: jdurbin
+    ansible_user: jdurbin
+    is_primary: false
+    ansible_ssh_retries: 3
+    cuda_version: "12-8"
+    nvidia_version: "570"
+    skip_cuda: false
+    ubuntu_major: "24"
+    ubuntu_minor: "04"
+    ipv6_enabled: false
+
+  hosts:
+    graval-0:
+      ansible_host: 207.210.107.98
