@@ -42,13 +42,15 @@ spec:
               cat <<EOF > /tmp/init.sql
               DO \$\$
               BEGIN
-                  CREATE TABLE IF NOT EXISTS miner_challenges (
-                      uuid character varying NOT NULL,
-                      seed bigint NOT NULL,
-                      challenge character varying NOT NULL,
-                      challenge_type character varying NOT NULL,
-                      created_at timestamp without time zone DEFAULT now(),
-                      CONSTRAINT miner_challenges_pkey PRIMARY KEY (uuid, seed, challenge_type)
+                  CREATE TABLE IF NOT EXISTS miner_challenges_v2 (
+                      uuid character varying not null,
+                      version character varying not null default 'v2',
+                      seed bigint not null,
+                      iterations integer not null default 1,
+                      challenge character varying not null,
+                      challenge_type character varying not null,
+                      created_at timestamp without time zone default now(),
+                      constraint miner_challenges_pkey primary key (uuid, seed, challenge_type)
                   );
               END;
               \$\$;
@@ -64,7 +66,7 @@ spec:
         - name: graval
           image: "{{ .Values.graval.image }}"
           imagePullPolicy: {{ .Values.graval.imagePullPolicy }}
-          command: ["poetry", "run", "python", "api/graval_server.py", "--port", "{{ .Values.graval.service.targetPort }}", "--validator-whitelist", "{{ join "," .Values.graval.validatorWhitelist }}"]
+          command: ["python", "api.py", "--port", "{{ .Values.graval.service.targetPort }}", "--validator-whitelist", "{{ join "," .Values.graval.validatorWhitelist }}", "--block-exernal"]
           env:
             - name: POSTGRES_PASSWORD
               valueFrom:
