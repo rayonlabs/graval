@@ -6,7 +6,7 @@ with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "README.md"))
 
 setup(
     name="graval",
-    version="0.0.6",
+    version="0.1.1",
     description="GraVal - graphics (card) validation framework",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -36,6 +36,6 @@ setup(
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
-        "Programming Language :: Python :: 3 :: Only"
+        "Programming Language :: Python :: 3 :: Only",
     ],
 )

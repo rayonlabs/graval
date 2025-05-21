@@ -33,19 +33,21 @@ class Validator(BaseGraVal):
         """
         Set up validator-specific library function signatures.
         """
-        self._lib.initialize_validator.argtypes = []
-        self._lib.initialize_validator.restype = None
+        self._lib.initialize_node.argtypes = []
+        self._lib.initialize_node.restype = c_ulong
         self._lib.generate_unique_seed.argtypes = [POINTER(c_char), c_uint]
         self._lib.generate_unique_seed.restype = c_uint
         self._lib.validator_encrypt.argtypes = [
             POINTER(GraValDeviceInfo),
             POINTER(c_char),
             c_ulong,
+            c_ulong,
         ]
         self._lib.validator_encrypt.restype = POINTER(GraValCiphertext)
         self._lib.validator_decrypt.argtypes = [
             POINTER(GraValDeviceInfo),
             POINTER(GraValCiphertext),
+            c_ulong,
             c_ulong,
         ]
         self._lib.validator_decrypt.restype = POINTER(c_char)
@@ -60,31 +62,44 @@ class Validator(BaseGraVal):
         self._lib.verify_device_info_challenge.restype = c_bool
         self._lib.generate_matrix_challenge.argtypes = [
             c_ulong,
+            c_ulong,
             POINTER(GraValDeviceInfo),
             POINTER(c_char),
         ]
         self._lib.generate_matrix_challenge.restype = POINTER(GraValCiphertext)
         self._lib.validate_matrix_challenge.argtypes = [
             c_ulong,
+            c_ulong,
             POINTER(GraValCiphertext),
             POINTER(GraValDeviceInfo),
             POINTER(c_char),
         ]
         self._lib.validate_matrix_challenge.restype = c_bool
+        count = self._lib.initialize_node()
+        if count == 0:
+            raise GraValError("Failed to initialize graval node")
+        self._initialized = True
+        self._device_count = count
+        self._lib.shutdown_node.argtypes = []
+        self._lib.shutdown_node.restype = None
 
-    def initialize(self) -> None:
+    def shutdown(self) -> None:
         """
-        Initialize validator node.
+        Shutdown and cleanup.
         """
-        self._lib.initialize_validator()
+        self._lib.shutdown_node()
 
-    def encrypt(self, device_info: Dict, plaintext: str, seed: int) -> Tuple[bytes, bytes, int]:
+    def encrypt(
+        self, device_info: Dict, plaintext: str, seed: int, iterations: int = 1
+    ) -> Tuple[bytes, bytes, int]:
         """
         Encrypt data as a validator.
         """
         device = GraValDeviceInfo.from_dict(device_info)
         text_buffer = create_string_buffer(plaintext.encode())
-        result = self._lib.validator_encrypt(byref(device), text_buffer, c_ulong(seed))
+        result = self._lib.validator_encrypt(
+            byref(device), text_buffer, c_ulong(seed), c_ulong(iterations)
+        )
         if not result:
             raise GraValError("Encryption failed")
         try:
@@ -102,6 +117,7 @@ class Validator(BaseGraVal):
         iv: bytes,
         length: int,
         seed: int,
+        iterations: int = 1,
     ) -> str:
         """
         Decrypt data as validator.
@@ -113,7 +129,9 @@ class Validator(BaseGraVal):
         ct.ciphertext = cast(ct_buffer, POINTER(c_ubyte))
         iv_array = (c_ubyte * 16)(*iv)
         ct.initialization_vector = iv_array
-        result = self._lib.validator_decrypt(byref(device), byref(ct), c_ulong(seed))
+        result = self._lib.validator_decrypt(
+            byref(device), byref(ct), c_ulong(seed), c_ulong(iterations)
+        )
         if not result:
             raise GraValError("Decryption failed")
         try:
@@ -161,14 +179,20 @@ class Validator(BaseGraVal):
         )
 
     def generate_matrix_challenge(
-        self, seed: int, device_info: Dict, plaintext: str
+        self,
+        seed: int,
+        device_info: Dict,
+        plaintext: str,
+        iterations: int = 1,
     ) -> Tuple[bytes, bytes, int]:
         """
         Generate a fresh matrix challenge for a device.
         """
         device = GraValDeviceInfo.from_dict(device_info)
         text_buffer = create_string_buffer(plaintext.encode())
-        result = self._lib.generate_matrix_challenge(c_ulong(seed), byref(device), text_buffer)
+        result = self._lib.generate_matrix_challenge(
+            c_ulong(seed), c_ulong(iterations), byref(device), text_buffer
+        )
         if not result:
             raise GraValError("Matrix challenge generation failed")
         try:
@@ -187,6 +211,7 @@ class Validator(BaseGraVal):
         length: int,
         device_info: Dict,
         expected: str,
+        iterations: int = 1,
     ) -> bool:
         """
         Validate a matrix challenge response.
@@ -200,5 +225,10 @@ class Validator(BaseGraVal):
         ct.initialization_vector = iv_array
         expected_buffer = create_string_buffer(expected.encode())
         return self._lib.validate_matrix_challenge(
-            c_ulong(seed), byref(ct), byref(device), expected_buffer
+            c_ulong(seed),
+            c_ulong(iterations),
+            c_ulong(iterations),
+            byref(ct),
+            byref(device),
+            expected_buffer,
         )

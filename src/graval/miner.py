@@ -15,7 +15,7 @@ from ctypes import (
     c_size_t,
 )
 from graval.base import BaseGraVal
-from graval.structures import GraValCiphertext, GraValError
+from graval.structures import GraValCiphertext, GraValError, GraValDeviceInfo
 
 
 class Miner(BaseGraVal):
@@ -26,38 +26,52 @@ class Miner(BaseGraVal):
     def __init__(self):
         super().__init__("libgraval-miner.so")
         self._setup_miner_functions()
+        count = self._lib.initialize_node()
+        if count == 0:
+            raise GraValError("Failed to initialize graval node")
+        self._initialized = False
+        self._device_count = count
 
     def _setup_miner_functions(self):
         """
         Set up miner-specific library function signatures.
         """
-        self._lib.initialize_node.argtypes = [c_ulong]
+        self._lib.initialize_node.argtypes = []
         self._lib.initialize_node.restype = c_uint
+        self._lib.generate_challenge_matrices.argtypes = [c_ulong, c_ulong]
+        self._lib.generate_challenge_matrices.restype = c_uint
         self._lib.miner_decrypt.argtypes = [POINTER(GraValCiphertext), c_uint]
         self._lib.miner_decrypt.restype = POINTER(c_char)
         self._lib.miner_encrypt.argtypes = [POINTER(c_char)]
         self._lib.miner_encrypt.restype = POINTER(GraValCiphertext)
         self._lib.miner_device_info_challenge.argtypes = [POINTER(c_char)]
         self._lib.miner_device_info_challenge.restype = POINTER(c_char)
-        self._lib.miner_matrix_challenge.argtypes = [c_ulong, POINTER(GraValCiphertext)]
+        self._lib.miner_matrix_challenge.argtypes = [c_ulong, c_ulong, POINTER(GraValCiphertext)]
         self._lib.miner_matrix_challenge.restype = POINTER(c_char)
+        self._lib.gather_device_info.argtypes = [c_uint, POINTER(c_char)]
+        self._lib.gather_device_info.restypes = POINTER(GraValDeviceInfo)
         self._lib.miner_filesystem_challenge.argtypes = [
             POINTER(c_char),
             c_size_t,
             c_size_t,
         ]
         self._lib.miner_filesystem_challenge.restype = POINTER(c_char)
+        self._lib.shutdown_node.argtypes = []
+        self._lib.shutdown_node.restype = None
 
-    def initialize(self, seed: int) -> int:
+    def initialize(self, seed: int, iterations: int = 1) -> int:
         """
         Initialize a miner node with the provided seed.
         """
-        count = self._lib.initialize_node(c_ulong(seed))
-        if count == 0:
-            raise GraValError("Failed to initialize graval node")
+        device_count = self._lib.generate_challenge_matrices(c_ulong(seed), c_ulong(iterations))
         self._initialized = True
-        self._device_count = count
-        return count
+        return device_count
+
+    def shutdown(self) -> None:
+        """
+        Shutdown and cleanup.
+        """
+        self._lib.shutdown_node()
 
     def encrypt(self, plaintext: str) -> Tuple[bytes, bytes, int]:
         """
@@ -108,7 +122,7 @@ class Miner(BaseGraVal):
         """
         Load device info by device ID (index).
         """
-        if not self._initialized:
+        if not self._device_count:
             raise GraValError("GraVal node not initialized")
         error_msg = create_string_buffer(1024)
         device_info = self._lib.gather_device_info(c_uint(device_id), error_msg)
@@ -120,7 +134,7 @@ class Miner(BaseGraVal):
         """
         Process device info challenges.
         """
-        if not self._initialized:
+        if not self._device_count:
             raise GraValError("GraVal node not initialized")
         challenge_buffer = create_string_buffer(challenge.encode())
         result = self._lib.miner_device_info_challenge(challenge_buffer)
@@ -132,7 +146,12 @@ class Miner(BaseGraVal):
             self._free_char_ptr(result)
 
     def process_matrix_challenge(
-        self, seed: int, encrypted_data: bytes, iv: bytes, length: int
+        self,
+        seed: int,
+        encrypted_data: bytes,
+        iv: bytes,
+        length: int,
+        iterations: int = 1,
     ) -> str:
         """
         Process a matrix challenge with the given seed and ciphertext.
@@ -145,7 +164,7 @@ class Miner(BaseGraVal):
         ct.ciphertext = cast(ct_buffer, POINTER(c_ubyte))
         iv_array = (c_ubyte * 16)(*iv)
         ct.initialization_vector = iv_array
-        result = self._lib.miner_matrix_challenge(c_ulong(seed), byref(ct))
+        result = self._lib.miner_matrix_challenge(c_ulong(seed), c_ulong(iterations), byref(ct))
         if not result:
             raise GraValError("Matrix challenge processing failed")
         try:

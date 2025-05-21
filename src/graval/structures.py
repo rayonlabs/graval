@@ -12,6 +12,7 @@ from ctypes import (
     c_bool,
     c_float,
     c_double,
+    c_void_p,
 )
 from typing import Dict
 
@@ -25,15 +26,16 @@ class GraValDeviceInfo(Structure):
         ("name", c_char * 64),
         ("uuid", c_char * 33),
         ("memory", c_size_t),
-        ("major", c_uint),
-        ("minor", c_uint),
         ("processors", c_uint),
-        ("sxm", c_bool),
         ("clock_rate", c_double),
         ("max_threads_per_processor", c_uint),
-        ("concurrent_kernels", c_bool),
-        ("ecc", c_bool),
         ("challenge_matrix", POINTER(c_float)),
+        ("context", c_void_p),
+        ("queue", c_void_p),
+        ("program", c_void_p),
+        ("tanh_kernel", c_void_p),
+        ("downsample_kernel", c_void_p),
+        ("opencl_initialized", c_bool),
     ]
 
     @classmethod
@@ -51,14 +53,9 @@ class GraValDeviceInfo(Structure):
         device.name = bytes(name_array)
         device.uuid = bytes(uuid_array)
         device.memory = data["memory"]
-        device.major = data["major"]
-        device.minor = data["minor"]
         device.processors = data["processors"]
-        device.sxm = data["sxm"]
         device.clock_rate = data["clock_rate"]
         device.max_threads_per_processor = data["max_threads_per_processor"]
-        device.concurrent_kernels = data["concurrent_kernels"]
-        device.ecc = data["ecc"]
         device.challenge_matrix = None
         return device
 
@@ -70,14 +67,9 @@ class GraValDeviceInfo(Structure):
             "name": self.name.decode("utf-8").rstrip("\x00"),
             "uuid": self.uuid.decode("utf-8").rstrip("\x00"),
             "memory": self.memory,
-            "major": self.major,
-            "minor": self.minor,
             "processors": self.processors,
-            "sxm": bool(self.sxm),
             "clock_rate": self.clock_rate,
             "max_threads_per_processor": self.max_threads_per_processor,
-            "concurrent_kernels": bool(self.concurrent_kernels),
-            "ecc": bool(self.ecc),
         }
 
 
