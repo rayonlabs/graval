@@ -8,7 +8,6 @@ import uvicorn
 import asyncio
 import base64
 import hashlib
-import json
 from typing import Optional
 from ipaddress import ip_address
 from loguru import logger
@@ -132,7 +131,9 @@ def main():
             loop = asyncio.get_event_loop()
             decrypted = await loop.run_in_executor(*args)
             logger.success(f"Decrypted payload: {len(decrypted)} bytes from {device_info['uuid']}")
-            return Response(content=base64.b64encode(decrypted.encode()).decode(), media_type="text/plain")
+            return Response(
+                content=base64.b64encode(decrypted.encode()).decode(), media_type="text/plain"
+            )
 
     @app.post("/encrypt")
     async def encrypt_payload(request: Request):
@@ -144,10 +145,11 @@ def main():
         device_info = data["device_info"]
         payload = data["payload"]
         if not isinstance(payload, str):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="payload must be str type")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="payload must be str type"
+            )
         seed = data["seed"]
         iterations = data.get("iterations", 1)
-        encrypted_payload = {}
         async with gpu_lock:
             loop = asyncio.get_event_loop()
             args = [None, validator.encrypt, device_info, payload, seed]
@@ -155,7 +157,22 @@ def main():
                 args.append(iterations)
             ciphertext, iv, length = await loop.run_in_executor(*args)
             logger.success(f"Generated {length} byte ciphertext for {device_info['uuid']}")
-            return Response(content=base64.b64encode(iv + ciphertext).decode(), media_type="text/plain")
+            return Response(
+                content=base64.b64encode(iv + ciphertext).decode(), media_type="text/plain"
+            )
+
+    @app.post("/verify_device_challenge")
+    async def verify_device_info_challenge(request: Request):
+        """
+        Compare a device info challenge/response to expected value.
+        """
+        data = await request.json()
+        await _filter(request)
+        devices = data["devices"]
+        challenge = data["challenge"]
+        response = data["response"]
+        async with gpu_lock:
+            return {"result": validator.verify_device_info_challenge(challenge, response, devices)}
 
     @app.get("/ping")
     async def ping():
