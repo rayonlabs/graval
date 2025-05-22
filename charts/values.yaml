@@ -19,11 +19,11 @@ graval:
   resources:
     requests:
       cpu: "1"
-      memory: "4Gi"
+      memory: "32Gi"
       nvidia.com/gpu: "1"
     limits:
       cpu: "1"
-      memory: "4Gi"
+      memory: "32Gi"
       nvidia.com/gpu: "1"
   service:
     type: ClusterIP
@@ -59,10 +59,10 @@ gravaldb:
   resources:
     requests:
       cpu: "1"
-      memory: "4Gi"
+      memory: "32Gi"
     limits:
       cpu: "1"
-      memory: "4Gi"
+      memory: "32Gi"
   service:
     port: 5432
     targetPort: 5432
