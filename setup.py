@@ -6,7 +6,7 @@ with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "README.md"))
 
 setup(
     name="graval",
-    version="0.1.1",
+    version="0.1.2",
     description="GraVal - graphics (card) validation framework",
     long_description=long_description,
     long_description_content_type="text/markdown",
