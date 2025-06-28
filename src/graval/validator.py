@@ -56,6 +56,7 @@ class Validator(BaseGraVal):
             c_ulong,
             c_size_t,
             POINTER(GraValMinerWorkProduct),
+            c_size_t,
         ]
         self._lib.validator_check_proof.restype = c_bool
         count = self._lib.initialize_node()
@@ -93,7 +94,7 @@ class Validator(BaseGraVal):
             self._free_ciphertext(result)
 
     def check_proof(
-        self, device_info: Dict, seed: int, check_iteration: int, work_product: Dict
+        self, device_info: Dict, seed: int, check_iteration: int, work_product: Dict, index: int = 0
     ) -> bool:
         """
         Check a miner's proof at a specific iteration.
@@ -124,7 +125,7 @@ class Validator(BaseGraVal):
             hash_pointers[i] = cast(hash_array, POINTER(c_ubyte))
         wp.intermediate_hashes = cast(hash_pointers, POINTER(POINTER(c_ubyte)))
         return self._lib.validator_check_proof(
-            byref(device), c_ulong(seed), c_size_t(check_iteration), byref(wp)
+            byref(device), c_ulong(seed), c_size_t(check_iteration), byref(wp), c_size_t(index)
         )
 
     def generate_device_info_challenge(self, device_count: int) -> str:

@@ -1,6 +1,5 @@
 import os
 import uuid
-import random
 import hashlib
 import pytest
 from graval.validator import Validator
@@ -11,6 +10,7 @@ from graval.structures import GraValError
 def test_encrypt_decrypt():
     """
     Test encrypting messages as miner and decrypting as validator (and vice versa).
+    Also test proof verification.
     """
     miner = Miner()
     validator = Validator()
@@ -18,17 +18,51 @@ def test_encrypt_decrypt():
     # Get miner device info.
     device_info = miner.get_device_info(0)
 
+    # Test with multiple iterations to ensure proof checking works
+    iterations = 2
+
     # Encrypt as the validator.
     plaintext = "Testing a super secret message..."
-    ciphertext, iv, length, seed = validator.encrypt(device_info, plaintext)
+    ciphertext, iv, length, seed = validator.encrypt(device_info, plaintext, iterations)
     print(f"Encrypted (validator): '{plaintext}' -- {length} bytes ciphertext")
     print(f"{ciphertext.hex()} {iv.hex()} {length=} {seed=}")
 
-    # Decrypt as miner.
-    miner.prove(seed)
+    # Decrypt as miner (this also generates the work product).
+    work_products = miner.prove(seed, iterations)
     decrypted = miner.decrypt(seed, ciphertext, iv, length, 0)
     print(f"Decrypted (miner):     '{decrypted}'")
     assert decrypted == plaintext, f"'{decrypted}' vs '{plaintext}'"
+
+    # Verify the miner's proof
+    print(f"\nVerifying proof with {iterations} iterations...")
+
+    # Get the work product for device 0
+    work_product = None
+    for wp in work_products:
+        if wp["device_id"] == 0:
+            work_product = wp["work_product"]
+            break
+
+    assert work_product is not None, "No work product found for device 0"
+
+    # Check proof at each iteration
+    all_checks_passed = True
+    for check_iter in range(iterations):
+        # Use index=0 to let the validator choose the optimal spot check index
+        passed = validator.check_proof(device_info, seed, check_iter, work_product, index=0)
+        print(f"Proof check for iteration {check_iter}: {'PASSED' if passed else 'FAILED'}")
+        if not passed:
+            all_checks_passed = False
+
+    assert all_checks_passed, "Proof verification failed"
+    print("All proof checks PASSED!")
+
+    # Also test with an explicit index (e.g., matrix 10)
+    if work_product["num_matrices"] > 10:
+        print("\nTesting with explicit check index 10...")
+        passed = validator.check_proof(device_info, seed, 0, work_product, index=10)
+        print(f"Proof check with explicit index 10: {'PASSED' if passed else 'FAILED'}")
+        assert passed, "Proof verification with explicit index failed"
 
     miner.shutdown()
     validator.shutdown()
