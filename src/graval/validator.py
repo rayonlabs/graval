@@ -10,14 +10,15 @@ from ctypes import (
     c_uint,
     c_int,
     c_bool,
-    c_ubyte,
     c_ulong,
+    c_size_t,
+    c_ubyte,
     create_string_buffer,
     cast,
     byref,
 )
 from .base import BaseGraVal
-from .structures import GraValDeviceInfo, GraValCiphertext, GraValError
+from .structures import GraValDeviceInfo, GraValCiphertext, GraValMinerWorkProduct, GraValError
 
 
 class Validator(BaseGraVal):
@@ -35,22 +36,12 @@ class Validator(BaseGraVal):
         """
         self._lib.initialize_node.argtypes = []
         self._lib.initialize_node.restype = c_ulong
-        self._lib.generate_unique_seed.argtypes = [POINTER(c_char), c_uint]
-        self._lib.generate_unique_seed.restype = c_uint
         self._lib.validator_encrypt.argtypes = [
             POINTER(GraValDeviceInfo),
             POINTER(c_char),
             c_ulong,
-            c_ulong,
         ]
         self._lib.validator_encrypt.restype = POINTER(GraValCiphertext)
-        self._lib.validator_decrypt.argtypes = [
-            POINTER(GraValDeviceInfo),
-            POINTER(GraValCiphertext),
-            c_ulong,
-            c_ulong,
-        ]
-        self._lib.validator_decrypt.restype = POINTER(c_char)
         self._lib.generate_device_info_challenge.argtypes = [c_int]
         self._lib.generate_device_info_challenge.restype = POINTER(c_char)
         self._lib.verify_device_info_challenge.argtypes = [
@@ -60,21 +51,13 @@ class Validator(BaseGraVal):
             c_uint,
         ]
         self._lib.verify_device_info_challenge.restype = c_bool
-        self._lib.generate_matrix_challenge.argtypes = [
-            c_ulong,
-            c_ulong,
+        self._lib.validator_check_proof.argtypes = [
             POINTER(GraValDeviceInfo),
-            POINTER(c_char),
-        ]
-        self._lib.generate_matrix_challenge.restype = POINTER(GraValCiphertext)
-        self._lib.validate_matrix_challenge.argtypes = [
             c_ulong,
-            c_ulong,
-            POINTER(GraValCiphertext),
-            POINTER(GraValDeviceInfo),
-            POINTER(c_char),
+            c_size_t,
+            POINTER(GraValMinerWorkProduct),
         ]
-        self._lib.validate_matrix_challenge.restype = c_bool
+        self._lib.validator_check_proof.restype = c_bool
         count = self._lib.initialize_node()
         if count == 0:
             raise GraValError("Failed to initialize graval node")
@@ -90,61 +73,59 @@ class Validator(BaseGraVal):
         self._lib.shutdown_node()
 
     def encrypt(
-        self, device_info: Dict, plaintext: str, seed: int, iterations: int = 1
+        self, device_info: Dict, plaintext: str, iterations: int = 1
     ) -> Tuple[bytes, bytes, int]:
         """
         Encrypt data as a validator.
         """
         device = GraValDeviceInfo.from_dict(device_info)
         text_buffer = create_string_buffer(plaintext.encode())
-        result = self._lib.validator_encrypt(
-            byref(device), text_buffer, c_ulong(seed), c_ulong(iterations)
-        )
+        result = self._lib.validator_encrypt(byref(device), text_buffer, c_ulong(iterations))
         if not result:
             raise GraValError("Encryption failed")
         try:
             ciphertext = bytes(result.contents.ciphertext[: result.contents.length])
             iv = bytes((result.contents.initialization_vector[i] for i in range(16)))
             length = result.contents.length
-            return ciphertext, iv, length
+            seed = result.contents.seed
+            return ciphertext, iv, length, seed
         finally:
             self._free_ciphertext(result)
 
-    def decrypt(
-        self,
-        device_info: Dict,
-        encrypted_data: bytes,
-        iv: bytes,
-        length: int,
-        seed: int,
-        iterations: int = 1,
-    ) -> str:
+    def check_proof(
+        self, device_info: Dict, seed: int, check_iteration: int, work_product: Dict
+    ) -> bool:
         """
-        Decrypt data as validator.
+        Check a miner's proof at a specific iteration.
         """
         device = GraValDeviceInfo.from_dict(device_info)
-        ct = GraValCiphertext()
-        ct.length = length
-        ct_buffer = create_string_buffer(encrypted_data)
-        ct.ciphertext = cast(ct_buffer, POINTER(c_ubyte))
-        iv_array = (c_ubyte * 16)(*iv)
-        ct.initialization_vector = iv_array
-        result = self._lib.validator_decrypt(
-            byref(device), byref(ct), c_ulong(seed), c_ulong(iterations)
+
+        wp = GraValMinerWorkProduct()
+        wp.num_matrices = work_product["num_matrices"]
+        wp.total_iterations = work_product["total_iterations"]
+        wp.final_matrix = None
+
+        hashes = work_product["intermediate_hashes"]
+        total_hashes = wp.total_iterations * wp.num_matrices
+        if len(hashes) != total_hashes:
+            raise GraValError(f"Invalid hash count: expected {total_hashes}, got {len(hashes)}")
+
+        hash_pointers = (POINTER(c_ubyte) * total_hashes)()
+        hash_arrays = []
+
+        for i, hash_hex in enumerate(hashes):
+            hash_bytes = bytes.fromhex(hash_hex)
+            if len(hash_bytes) != 32:
+                raise GraValError(
+                    f"Invalid hash length at index {i}: expected 32, got {len(hash_bytes)}"
+                )
+            hash_array = (c_ubyte * 32)(*hash_bytes)
+            hash_arrays.append(hash_array)  # Keep reference
+            hash_pointers[i] = cast(hash_array, POINTER(c_ubyte))
+        wp.intermediate_hashes = cast(hash_pointers, POINTER(POINTER(c_ubyte)))
+        return self._lib.validator_check_proof(
+            byref(device), c_ulong(seed), c_size_t(check_iteration), byref(wp)
         )
-        if not result:
-            raise GraValError("Decryption failed")
-        try:
-            i = 0
-            bytes_list = []
-            while result[i] and i < ct.length + 32:
-                if (byte_ := ord(result[i])) == 0:
-                    break
-                bytes_list.append(byte_)
-                i += 1
-            return bytes(bytes_list).decode("utf-8")
-        finally:
-            self._free_char_ptr(result)
 
     def generate_device_info_challenge(self, device_count: int) -> str:
         """
@@ -176,59 +157,4 @@ class Validator(BaseGraVal):
             response_buffer,
             cast(device_pointers, POINTER(POINTER(GraValDeviceInfo))),
             c_uint(device_count),
-        )
-
-    def generate_matrix_challenge(
-        self,
-        seed: int,
-        device_info: Dict,
-        plaintext: str,
-        iterations: int = 1,
-    ) -> Tuple[bytes, bytes, int]:
-        """
-        Generate a fresh matrix challenge for a device.
-        """
-        device = GraValDeviceInfo.from_dict(device_info)
-        text_buffer = create_string_buffer(plaintext.encode())
-        result = self._lib.generate_matrix_challenge(
-            c_ulong(seed), c_ulong(iterations), byref(device), text_buffer
-        )
-        if not result:
-            raise GraValError("Matrix challenge generation failed")
-        try:
-            ciphertext = bytes(result.contents.ciphertext[: result.contents.length])
-            iv = bytes(result.contents.initialization_vector)
-            length = result.contents.length
-            return ciphertext, iv, length
-        finally:
-            self._free_ciphertext(result)
-
-    def validate_matrix_challenge(
-        self,
-        seed: int,
-        encrypted_data: bytes,
-        iv: bytes,
-        length: int,
-        device_info: Dict,
-        expected: str,
-        iterations: int = 1,
-    ) -> bool:
-        """
-        Validate a matrix challenge response.
-        """
-        device = GraValDeviceInfo.from_dict(device_info)
-        ct = GraValCiphertext()
-        ct.length = length
-        ct_buffer = create_string_buffer(encrypted_data)
-        ct.ciphertext = cast(ct_buffer, POINTER(c_ubyte))
-        iv_array = (c_ubyte * 16)(*iv)
-        ct.initialization_vector = iv_array
-        expected_buffer = create_string_buffer(expected.encode())
-        return self._lib.validate_matrix_challenge(
-            c_ulong(seed),
-            c_ulong(iterations),
-            c_ulong(iterations),
-            byref(ct),
-            byref(device),
-            expected_buffer,
         )
