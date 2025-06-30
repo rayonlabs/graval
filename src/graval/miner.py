@@ -60,14 +60,14 @@ class Miner(BaseGraVal):
         """
         Perform PoVW work using the provided seed for N iterations.
         """
-        device_count = self._lib.generate_challenge_matrices(c_ulong(seed), c_ulong(iterations))
-        if device_count == 0:
-            raise GraValError("Failed to generate work product.")
-        self._initialized = True
-        self._seed = seed
+        if self._seed != seed:
+            if not self._lib.generate_challenge_matrices(c_ulong(seed), c_ulong(iterations)):
+                raise GraValError("Failed to generate work product.")
+            self._seed = seed
+            self._initialized = True
 
         work_products = []
-        for device_id in range(device_count):
+        for device_id in range(self._device_count):
             device_info = self.get_device_info(device_id)
             if "work_product" in device_info:
                 work_products.append(

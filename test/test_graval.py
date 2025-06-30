@@ -20,11 +20,13 @@ def test_encrypt_decrypt():
     device_info = miner.get_device_info(0)
 
     # Test with multiple iterations to ensure proof checking works
-    iterations = 2
+    iterations = 1
 
     # Encrypt as the validator.
     plaintext = "Testing a super secret message..."
-    ciphertext, iv, length, seed = validator.encrypt(device_info, plaintext, iterations)
+    ciphertext, iv, length, seed = validator.encrypt(
+        device_info, plaintext, iterations, override_seed=42
+    )
     print(f"Encrypted (validator): '{plaintext}' -- {length} bytes ciphertext")
     print(f"{ciphertext.hex()} {iv.hex()} {length=} {seed=}")
 

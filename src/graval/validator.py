@@ -39,6 +39,7 @@ class Validator(BaseGraVal):
         self._lib.validator_encrypt.argtypes = [
             POINTER(GraValDeviceInfo),
             POINTER(c_char),
+            c_size_t,
             c_ulong,
         ]
         self._lib.validator_encrypt.restype = POINTER(GraValCiphertext)
@@ -74,14 +75,17 @@ class Validator(BaseGraVal):
         self._lib.shutdown_node()
 
     def encrypt(
-        self, device_info: Dict, plaintext: str, iterations: int = 1
+        self, device_info: Dict, plaintext: str, iterations: int = 1, override_seed: int = None
     ) -> Tuple[bytes, bytes, int]:
         """
         Encrypt data as a validator.
         """
         device = GraValDeviceInfo.from_dict(device_info)
         text_buffer = create_string_buffer(plaintext.encode())
-        result = self._lib.validator_encrypt(byref(device), text_buffer, c_ulong(iterations))
+        seed_arg = override_seed if isinstance(override_seed, int) and override_seed > 0 else 0
+        result = self._lib.validator_encrypt(
+            byref(device), text_buffer, c_size_t(iterations), c_ulong(seed_arg)
+        )
         if not result:
             raise GraValError("Encryption failed")
         try:
