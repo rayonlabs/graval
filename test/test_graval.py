@@ -1,3 +1,4 @@
+import time
 import os
 import uuid
 import hashlib
@@ -74,9 +75,16 @@ def test_device_info_challenge():
     devices = [miner.get_device_info(idx) for idx in range(device_count)]
     validator = Validator()
     for _ in range(200):
+        started_at = time.time()
         challenge = validator.generate_device_info_challenge(device_count)
+        delta = time.time() - started_at
+        started_at = time.time()
         response = miner.process_device_info_challenge(challenge)
+        delta2 = time.time() - started_at
+        started_at = time.time()
         assert validator.verify_device_info_challenge(challenge, response, devices)
+        delta3 = time.time() - started_at
+        print(f"Device challenge: gen={delta} proc={delta2} ver={delta3}")
     print("Successfully verified 200 device info challenges")
     miner.shutdown()
     validator.shutdown()
