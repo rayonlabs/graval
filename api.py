@@ -8,25 +8,11 @@ import uvicorn
 import asyncio
 import base64
 import hashlib
-from typing import Optional
 from ipaddress import ip_address
 from loguru import logger
-from pydantic import BaseModel
 from graval import Validator
 from bittensor_wallet.keypair import Keypair
 from fastapi import FastAPI, Request, status, HTTPException, Response
-
-
-class Cipher(BaseModel):
-    ciphertext: str
-    iv: str
-    length: int
-    iterations: Optional[int] = 1
-
-
-class Challenge(Cipher):
-    seed: int
-    plaintext: str
 
 
 def main():
@@ -53,7 +39,7 @@ def main():
     app = FastAPI(
         title="GraVal as an API",
         description="GPU validation service.",
-        version="0.1.1",
+        version="0.2.3",
     )
     gpu_lock = asyncio.Lock()
 
@@ -104,37 +90,6 @@ def main():
             sha2 = hashlib.sha256(request_body).hexdigest()
             verify_request(request, args.validator_whitelist.split(","), extra_key=sha2)
 
-    @app.post("/decrypt")
-    async def decrypt_payload(request: Request) -> str:
-        """
-        Decrypt an encrypted payload.
-        """
-        data = await request.json()
-        await _filter(request)
-        device_info = data["device_info"]
-        payload = data["payload"]
-        seed = data["seed"]
-        iterations = data.get("iterations", 1)
-        iv, ciphertext = None, None
-        try:
-            bytes_ = base64.b64decode(payload)
-            iv = bytes_[:16]
-            ciphertext = bytes_[16:]
-        except Exception:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid payload")
-
-        args = [None, validator.decrypt, device_info, ciphertext, iv, len(ciphertext), seed]
-        if not hasattr(validator, "initialize"):
-            args.append(iterations)
-
-        async with gpu_lock:
-            loop = asyncio.get_event_loop()
-            decrypted = await loop.run_in_executor(*args)
-            logger.success(f"Decrypted payload: {len(decrypted)} bytes from {device_info['uuid']}")
-            return Response(
-                content=base64.b64encode(decrypted.encode()).decode(), media_type="text/plain"
-            )
-
     @app.post("/encrypt")
     async def encrypt_payload(request: Request):
         """
@@ -144,22 +99,40 @@ def main():
         await _filter(request)
         device_info = data["device_info"]
         payload = data["payload"]
+        seed = data.get("seed")
         if not isinstance(payload, str):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="payload must be str type"
             )
-        seed = data["seed"]
-        iterations = data.get("iterations", 1)
         async with gpu_lock:
-            loop = asyncio.get_event_loop()
-            args = [None, validator.encrypt, device_info, payload, seed]
-            if not hasattr(validator, "initialize"):
-                args.append(iterations)
-            ciphertext, iv, length = await loop.run_in_executor(*args)
-            logger.success(f"Generated {length} byte ciphertext for {device_info['uuid']}")
-            return Response(
-                content=base64.b64encode(iv + ciphertext).decode(), media_type="text/plain"
+            kwargs = {"iterations": data.get("iterations", 1)}
+            if isinstance(seed, int) and seed > 0:
+                kwargs["override_seed"] = seed
+            ciphertext, iv, length, seed = validator.encrypt(device_info, payload, **kwargs)
+            logger.success(
+                f"Generated {length} byte ciphertext for {device_info['uuid']} and {seed=}"
             )
+            return Response(
+                content=f"{seed}|" + base64.b64encode(iv + ciphertext).decode(),
+                media_type="text/plain",
+            )
+
+    @app.post("/check_proof")
+    async def check_proof(request: Request):
+        """
+        Check if a proof is valid.
+        """
+        proof = await request.json()
+        async with gpu_lock:
+            return {
+                "result": validator.check_proof(
+                    proof["device_info"],
+                    proof["seed"],
+                    0,
+                    proof["work_product"],
+                    index=proof.get("check_index", 0),
+                )
+            }
 
     @app.post("/verify_device_challenge")
     async def verify_device_info_challenge(request: Request):

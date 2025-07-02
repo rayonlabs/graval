@@ -20,7 +20,7 @@ def test_encrypt_decrypt():
     device_info = miner.get_device_info(0)
 
     # Test with multiple iterations to ensure proof checking works
-    iterations = 1
+    iterations = 2
 
     # Encrypt as the validator.
     plaintext = "Testing a super secret message..."
