@@ -2,7 +2,7 @@
 GraVal - Miner wrapper.
 """
 
-from typing import Tuple, Dict
+from typing import Dict
 from ctypes import (
     POINTER,
     c_char,
@@ -31,6 +31,7 @@ class Miner(BaseGraVal):
             raise GraValError("Failed to initialize graval node")
         self._initialized = False
         self._device_count = count
+        self._seed = None
 
     def _setup_miner_functions(self):
         """
@@ -42,12 +43,8 @@ class Miner(BaseGraVal):
         self._lib.generate_challenge_matrices.restype = c_uint
         self._lib.miner_decrypt.argtypes = [POINTER(GraValCiphertext), c_uint]
         self._lib.miner_decrypt.restype = POINTER(c_char)
-        self._lib.miner_encrypt.argtypes = [POINTER(c_char)]
-        self._lib.miner_encrypt.restype = POINTER(GraValCiphertext)
         self._lib.miner_device_info_challenge.argtypes = [POINTER(c_char)]
         self._lib.miner_device_info_challenge.restype = POINTER(c_char)
-        self._lib.miner_matrix_challenge.argtypes = [c_ulong, c_ulong, POINTER(GraValCiphertext)]
-        self._lib.miner_matrix_challenge.restype = POINTER(c_char)
         self._lib.gather_device_info.argtypes = [c_uint, POINTER(c_char)]
         self._lib.gather_device_info.restypes = POINTER(GraValDeviceInfo)
         self._lib.miner_filesystem_challenge.argtypes = [
@@ -59,13 +56,29 @@ class Miner(BaseGraVal):
         self._lib.shutdown_node.argtypes = []
         self._lib.shutdown_node.restype = None
 
-    def initialize(self, seed: int, iterations: int = 1) -> int:
+    def prove(self, seed: int, iterations: int = 1) -> list[dict]:
         """
-        Initialize a miner node with the provided seed.
+        Perform PoVW work using the provided seed for N iterations.
         """
-        device_count = self._lib.generate_challenge_matrices(c_ulong(seed), c_ulong(iterations))
-        self._initialized = True
-        return device_count
+        if self._seed != seed:
+            if not self._lib.generate_challenge_matrices(c_ulong(seed), c_ulong(iterations)):
+                raise GraValError("Failed to generate work product.")
+            self._seed = seed
+            self._initialized = True
+
+        work_products = []
+        for device_id in range(self._device_count):
+            device_info = self.get_device_info(device_id)
+            if "work_product" in device_info:
+                work_products.append(
+                    {
+                        "device_id": device_id,
+                        "device_uuid": device_info["uuid"],
+                        "device_name": device_info["name"],
+                        "work_product": device_info["work_product"],
+                    }
+                )
+        return work_products
 
     def shutdown(self) -> None:
         """
@@ -73,31 +86,16 @@ class Miner(BaseGraVal):
         """
         self._lib.shutdown_node()
 
-    def encrypt(self, plaintext: str) -> Tuple[bytes, bytes, int]:
-        """
-        Encrypt data as a miner.
-        """
-        if not self._initialized:
-            raise GraValError("GraVal node not initialized")
-        text_buffer = create_string_buffer(plaintext.encode())
-        result = self._lib.miner_encrypt(cast(text_buffer, POINTER(c_char)))
-        if not result:
-            raise GraValError("Encryption failed")
-        try:
-            ciphertext = bytes(result.contents.ciphertext[: result.contents.length])
-            iv = bytes(result.contents.initialization_vector)
-            length = result.contents.length
-            return ciphertext, iv, length
-        finally:
-            self._free_ciphertext(result)
-
-    def decrypt(self, encrypted_data: bytes, iv: bytes, length: int, device_id: int) -> str:
+    def decrypt(
+        self, seed: int, encrypted_data: bytes, iv: bytes, length: int, device_id: int
+    ) -> str:
         """
         Decrypt data as a miner.
         """
-        if not self._initialized:
+        if not self._initialized or self._seed != seed:
             raise GraValError("GraVal node not initialized")
         ct = GraValCiphertext()
+        ct.seed = seed
         ct.length = length
         ct_buffer = create_string_buffer(encrypted_data)
         ct.ciphertext = cast(ct_buffer, POINTER(c_ubyte))
@@ -142,40 +140,6 @@ class Miner(BaseGraVal):
             raise GraValError("Failed to process challenge")
         try:
             return bytes(result[:64]).decode()
-        finally:
-            self._free_char_ptr(result)
-
-    def process_matrix_challenge(
-        self,
-        seed: int,
-        encrypted_data: bytes,
-        iv: bytes,
-        length: int,
-        iterations: int = 1,
-    ) -> str:
-        """
-        Process a matrix challenge with the given seed and ciphertext.
-        """
-        if not self._initialized:
-            raise GraValError("GraVal node not initialized")
-        ct = GraValCiphertext()
-        ct.length = length
-        ct_buffer = create_string_buffer(encrypted_data)
-        ct.ciphertext = cast(ct_buffer, POINTER(c_ubyte))
-        iv_array = (c_ubyte * 16)(*iv)
-        ct.initialization_vector = iv_array
-        result = self._lib.miner_matrix_challenge(c_ulong(seed), c_ulong(iterations), byref(ct))
-        if not result:
-            raise GraValError("Matrix challenge processing failed")
-        try:
-            i = 0
-            bytes_list = []
-            while result[i] and i < ct.length + 32:
-                if (byte_ := ord(result[i])) == 0:
-                    break
-                bytes_list.append(byte_)
-                i += 1
-            return bytes(bytes_list).decode("utf-8")
         finally:
             self._free_char_ptr(result)
 

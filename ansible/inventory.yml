@@ -7,8 +7,8 @@ all:
     is_primary: false
     ansible_ssh_common_args: '-o ControlPath=none'
     ansible_ssh_retries: 3
-    cuda_version: "12.8"
-    nvidia_version: "570"
+    cuda_version: "12.9"
+    nvidia_version: "575"
     skip_cuda: false
     ubuntu_major: "24"
     ubuntu_minor: "04"

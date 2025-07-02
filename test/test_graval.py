@@ -1,6 +1,6 @@
+import time
 import os
 import uuid
-import random
 import hashlib
 import pytest
 from graval.validator import Validator
@@ -11,61 +11,62 @@ from graval.structures import GraValError
 def test_encrypt_decrypt():
     """
     Test encrypting messages as miner and decrypting as validator (and vice versa).
+    Also test proof verification.
     """
     miner = Miner()
     validator = Validator()
 
-    # Validator generates a unique seed.
-    seed = random.randint(0, 100000)
-
-    # Initialize the miner node.
-    miner.initialize(seed)
+    # Get miner device info.
     device_info = miner.get_device_info(0)
-    print(f"Miner device info: {device_info}")
+
+    # Test with multiple iterations to ensure proof checking works
+    iterations = 1
 
     # Encrypt as the validator.
     plaintext = "Testing a super secret message..."
-    ciphertext, iv, length = validator.encrypt(device_info, plaintext, seed)
+    ciphertext, iv, length, seed = validator.encrypt(
+        device_info, plaintext, iterations, override_seed=42
+    )
     print(f"Encrypted (validator): '{plaintext}' -- {length} bytes ciphertext")
-    print(f"{ciphertext.hex()} {iv.hex()} {length=}")
+    print(f"{ciphertext.hex()} {iv.hex()} {length=} {seed=}")
 
-    ## Decrypt as the miner.
-    decrypted = miner.decrypt(ciphertext, iv, length, 0)
+    # Decrypt as miner (this also generates the work product).
+    work_products = miner.prove(seed, iterations)
+    decrypted = miner.decrypt(seed, ciphertext, iv, length, 0)
     print(f"Decrypted (miner):     '{decrypted}'")
     assert decrypted == plaintext, f"'{decrypted}' vs '{plaintext}'"
 
-    # Encrypt as the miner.
-    plaintext += " As a miner..."
-    ciphertext, iv, length = miner.encrypt(plaintext)
-    print(f"Encrypted (miner):     '{plaintext}' -- {length} bytes")
-    decrypted = validator.decrypt(device_info, ciphertext, iv, length, seed)
-    print(f"Decrypted (validator): '{decrypted}'")
-    assert plaintext == decrypted
-    print("Successfully verified encryption/decryption")
+    # Verify the miner's proof
+    print(f"\nVerifying proof with {iterations} iterations...")
 
-    miner.shutdown()
-    validator.shutdown()
+    # Get the work product for device 0
+    work_product = None
+    for wp in work_products:
+        if wp["device_id"] == 0:
+            work_product = wp["work_product"]
+            break
 
+    assert work_product is not None, "No work product found for device 0"
 
-def test_matrix_challenge():
-    miner = Miner()
-    validator = Validator()
+    # Check proof at each iteration
+    all_checks_passed = True
+    for check_iter in range(iterations):
+        # Use index=0 to let the validator choose the optimal spot check index
+        passed = validator.check_proof(device_info, seed, check_iter, work_product, index=0)
+        print(f"Proof check for iteration {check_iter}: {'PASSED' if passed else 'FAILED'}")
+        if not passed:
+            all_checks_passed = False
 
-    # Initialize, but really only so we can get the device info.
-    _ = miner.initialize(42, 1)
-    device_info = miner.get_device_info(0)
+    assert all_checks_passed, "Proof verification failed"
+    print("All proof checks PASSED!")
 
-    # Generate a random string, which we'll encrypt with a random seed.
-    challenge_string = str(uuid.uuid4())
-    seed = random.randint(0, 10000000)
-    ciphertext, iv, length = validator.generate_matrix_challenge(
-        seed, device_info, challenge_string
-    )
+    # Also test with an explicit index (e.g., matrix 10)
+    if work_product["num_matrices"] > 10:
+        print("\nTesting with explicit check index 10...")
+        passed = validator.check_proof(device_info, seed, 0, work_product, index=10)
+        print(f"Proof check with explicit index 10: {'PASSED' if passed else 'FAILED'}")
+        assert passed, "Proof verification with explicit index failed"
 
-    # Simulate the miner responding to the matrix challenge.
-    miner_response = miner.process_matrix_challenge(seed, ciphertext, iv, length)
-    assert miner_response == challenge_string
-    print(f"Successfully responded to challenge string: {miner_response}")
     miner.shutdown()
     validator.shutdown()
 
@@ -76,9 +77,16 @@ def test_device_info_challenge():
     devices = [miner.get_device_info(idx) for idx in range(device_count)]
     validator = Validator()
     for _ in range(200):
+        started_at = time.time()
         challenge = validator.generate_device_info_challenge(device_count)
+        delta = time.time() - started_at
+        started_at = time.time()
         response = miner.process_device_info_challenge(challenge)
+        delta2 = time.time() - started_at
+        started_at = time.time()
         assert validator.verify_device_info_challenge(challenge, response, devices)
+        delta3 = time.time() - started_at
+        print(f"Device challenge: gen={delta} proc={delta2} ver={delta3}")
     print("Successfully verified 200 device info challenges")
     miner.shutdown()
     validator.shutdown()
