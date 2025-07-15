@@ -1,6 +1,6 @@
 graval:
   replicaCount: 8
-  image: parachutes/graval-api:0.2.3
+  image: parachutes/graval-api:0.2.4
   imagePullPolicy: Always
   validatorWhitelist:
     - 5Dt7HZ7Zpw4DppPxFM7Ke3Cm7sDAWhsZXmM5ZAmE7dSVJbcQ
