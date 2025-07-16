@@ -66,18 +66,15 @@ class Miner(BaseGraVal):
             self._seed = seed
             self._initialized = True
 
-        work_products = []
+        work_products = {}
         for device_id in range(self._device_count):
             device_info = self.get_device_info(device_id)
-            if "work_product" in device_info:
-                work_products.append(
-                    {
-                        "device_id": device_id,
-                        "device_uuid": device_info["uuid"],
-                        "device_name": device_info["name"],
-                        "work_product": device_info["work_product"],
-                    }
-                )
+            work_products[device_info["uuid"]] = {
+                "device_id": device_id,
+                "device_uuid": device_info["uuid"],
+                "device_name": device_info["name"],
+                "work_product": device_info["work_product"],
+            }
         return work_products
 
     def shutdown(self) -> None:
