@@ -39,7 +39,7 @@ def main():
     app = FastAPI(
         title="GraVal as an API",
         description="GPU validation service.",
-        version="0.2.4",
+        version="0.2.5",
     )
     gpu_lock = asyncio.Lock()
 
@@ -108,7 +108,9 @@ def main():
             kwargs = {"iterations": data.get("iterations", 1)}
             if isinstance(seed, int) and seed > 0:
                 kwargs["override_seed"] = seed
-            ciphertext, iv, length, seed = validator.encrypt(device_info, payload, **kwargs)
+            ciphertext, iv, length, seed = await asyncio.to_thread(
+                validator.encrypt, device_info, payload, **kwargs
+            )
             logger.success(
                 f"Generated {length} byte ciphertext for {device_info['uuid']} and {seed=}"
             )
@@ -144,8 +146,10 @@ def main():
         devices = data["devices"]
         challenge = data["challenge"]
         response = data["response"]
-        async with gpu_lock:
-            return {"result": validator.verify_device_info_challenge(challenge, response, devices)}
+        result = await asyncio.to_thread(
+            validator.verify_device_info_challenge, challenge, response, devices
+        )
+        return {"result": result}
 
     @app.get("/ping")
     async def ping():
